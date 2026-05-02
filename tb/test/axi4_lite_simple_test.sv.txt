@@ -1,0 +1,34 @@
+`ifndef AXI4_LITE_SIMPLE_TEST_SV
+`define AXI4_LITE_SIMPLE_TEST_SV
+
+//==============================================================================
+// axi4_lite_simple_test — 基础功能冒烟
+// 启动序列：axi4_lite_simple_rw_seq
+//==============================================================================
+
+import uvm_pkg::*;
+`include "uvm_macros.svh"
+`include "axi4_lite_base_test.sv"
+`include "../seq/axi4_lite_simple_rw_seq.sv"
+
+class axi4_lite_simple_test extends axi4_lite_base_test;
+	`uvm_component_utils(axi4_lite_simple_test)
+
+	function new(string name = "axi4_lite_simple_test", uvm_component parent = null);
+		super.new(name, parent);
+	endfunction
+
+	virtual task run_phase(uvm_phase phase);
+		axi4_lite_simple_rw_seq seq;
+		`uvm_info("TEST", "Simple Test starting...", UVM_LOW)
+		phase.raise_objection(this, "Start axi4_lite_simple_rw_seq");
+
+		seq = axi4_lite_simple_rw_seq::type_id::create("seq");
+		seq.start(env.agt.sqr);
+
+		phase.drop_objection(this, "Finish axi4_lite_simple_rw_seq");
+		`uvm_info("TEST", "Simple Test finished!", UVM_LOW)
+	endtask
+endclass
+`endif
+	

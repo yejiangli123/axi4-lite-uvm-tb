@@ -1,0 +1,49 @@
+# ----- Synopsys VCS -----
+csrc/
+simv
+simv.daidir/
+*.daidir/
+ucli.key
+vc_hdrs.h
+*.log
+comp.log
+sim.log
+DVEfiles/
+
+# ----- Coverage -----
+*.vdb/
+cov/
+cov_report_*/
+reports/
+
+# ----- Waveforms -----
+*.vcd
+*.fsdb
+*.fsdb.*
+*.vpd
+
+# ----- Verdi / Novas -----
+verdiLog/
+novas.conf
+novas.rc
+*.rc.bak
+vdCovLog/
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+
+# ----- OS / IDE -----
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# ----- 可选：若本地生成文档 HTML 不想入库 -----
+# reports/coverage/

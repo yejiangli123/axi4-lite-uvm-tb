@@ -1,0 +1,159 @@
+//==============================================================================
+// axi4_lite_dut.sv — AXI4-Lite 从设备（寄存器窗口）
+// 功能：4×32bit 寄存器（addr[3:2]）；写通道三态机 WR_IDLE→DATA→RESP；读通道 RD_IDLE→DATA。
+// 异常：非对齐/越界 → DECERR；WSTRB=0 写 → SLVERR（与 scoreboard 期望一致）。
+// 分区：寄存器阵列 | 写状态机 always_ff | 读状态机 always_ff
+//==============================================================================
+
+module axi4_lite_dut #(
+    parameter ADDR_WIDTH = 32,
+    parameter DATA_WIDTH = 32
+)(
+    input  logic                    aclk,
+    input  logic                    aresetn,
+
+    // 写地址通道
+    input  logic [ADDR_WIDTH-1:0]  awaddr,
+    input  logic                    awvalid,
+    output logic                    awready,
+
+    // 写数据通道
+    input  logic [DATA_WIDTH-1:0]  wdata,
+    input  logic [3:0]              wstrb,
+    input  logic                    wvalid,
+    output logic                    wready,
+
+    // 写响应通道
+    output logic [1:0]              bresp,
+    output logic                    bvalid,
+    input  logic                    bready,
+
+    // 读地址通道
+    input  logic [ADDR_WIDTH-1:0]  araddr,
+    input  logic                    arvalid,
+    output logic                    arready,
+
+    // 读数据通道
+    output logic [DATA_WIDTH-1:0]  rdata,
+    output logic [1:0]              rresp,
+    output logic                    rvalid,
+    input  logic                    rready
+);
+
+// ----- 存储阵列（字节写由 WSTRB 控制） -----
+logic [31:0] reg_file [3:0];
+
+// ======================
+// 写通道状态机
+// ======================
+enum logic [1:0] {WR_IDLE, WR_DATA, WR_RESP} wr_state;
+
+always_ff @(posedge aclk or negedge aresetn) begin
+    if(!aresetn) begin
+        wr_state <= WR_IDLE;
+        awready  <= 1'b0;
+        wready   <= 1'b0;
+        bvalid   <= 1'b0;
+        bresp    <= 2'b00;
+        // 寄存器复位为0
+        for(int i=0; i<4; i++) begin
+            reg_file[i] <= 32'h0;
+        end
+    end
+    else begin
+        case(wr_state)
+            WR_IDLE: begin
+                // 等待写地址和写数据同时有效
+                if(awvalid && wvalid) begin
+                    awready <= 1'b1;
+                    wready  <= 1'b1;
+                    wr_state <= WR_DATA;
+                end
+            end
+
+            WR_DATA: begin
+                awready <= 1'b0;
+                wready  <= 1'b0;
+                // 写响应优先级：非对齐/越界 => DECERR，非法WSTRB => SLVERR，正常 => OKAY
+                if(awaddr[1:0] != 2'b00) begin
+                    bresp <= 2'b11; // 非对齐地址，返回DECERR
+                end
+                else if(awaddr[3:2] >= 4) begin
+                    bresp <= 2'b11; // 地址越界，返回DECERR
+                end
+                else if(wstrb == 4'b0000) begin
+                    bresp <= 2'b10; // 非法写选通，返回SLVERR
+                end
+                else begin
+                    // 按字节选通写寄存器
+                    if(wstrb[0]) reg_file[awaddr[3:2]][7:0]   <= wdata[7:0];
+                    if(wstrb[1]) reg_file[awaddr[3:2]][15:8]  <= wdata[15:8];
+                    if(wstrb[2]) reg_file[awaddr[3:2]][23:16] <= wdata[23:16];
+                    if(wstrb[3]) reg_file[awaddr[3:2]][31:24] <= wdata[31:24];
+                    bresp <= 2'b00; // 正常响应OKAY
+                end
+                bvalid <= 1'b1;
+                wr_state <= WR_RESP;
+            end
+
+            WR_RESP: begin
+                // 等待主机接收响应
+                if(bready) begin
+                    bvalid <= 1'b0;
+                    wr_state <= WR_IDLE;
+                end
+            end
+        endcase
+    end
+end
+
+// ======================
+// 读通道状态机
+// ======================
+enum logic [1:0] {RD_IDLE, RD_DATA} rd_state;
+
+always_ff @(posedge aclk or negedge aresetn) begin
+    if(!aresetn) begin
+        rd_state <= RD_IDLE;
+        arready  <= 1'b0;
+        rvalid   <= 1'b0;
+        rdata    <= 32'h0;
+        rresp    <= 2'b00;
+    end
+    else begin
+        case(rd_state)
+            RD_IDLE: begin
+                // 等待读地址有效
+                if(arvalid) begin
+                    arready <= 1'b1;
+                    rd_state <= RD_DATA;
+                    // 读响应：非对齐/越界 => DECERR
+                    if(araddr[1:0] != 2'b00) begin
+                        rdata <= 32'h0;
+                        rresp <= 2'b11; // 非对齐地址，返回DECERR
+                    end
+                    else if(araddr[3:2] < 4) begin
+                        rdata <= reg_file[araddr[3:2]];
+                        rresp <= 2'b00; // 正常响应OKAY
+                    end
+                    else begin
+                        rdata <= 32'h0;
+                        rresp <= 2'b11; // 地址越界，返回DECERR
+                    end
+                end
+            end
+
+            RD_DATA: begin
+                arready <= 1'b0;
+                rvalid  <= 1'b1;
+                // 等待主机接收读数据
+                if(rready) begin
+                    rvalid <= 1'b0;
+                    rd_state <= RD_IDLE;
+                end
+            end
+        endcase
+    end
+end
+
+endmodule

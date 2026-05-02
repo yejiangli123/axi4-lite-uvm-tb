@@ -1,0 +1,35 @@
+`ifndef AXI4_LITE_BASE_TEST_SV
+`define AXI4_LITE_BASE_TEST_SV
+
+//==============================================================================
+// axi4_lite_base_test.sv — 测试基类
+// 功能：创建 env；设置全局超时；打印 UVM 拓扑。具体激励在各派生类 run_phase 启动 sequence。
+//==============================================================================
+
+import uvm_pkg::*;
+`include "uvm_macros.svh"
+`include "../env/axi4_lite_env.sv"
+
+class axi4_lite_base_test extends uvm_test;
+	`uvm_component_utils(axi4_lite_base_test)
+
+	axi4_lite_env env;
+	localparam time GLOBAL_TEST_TIMEOUT = 1ms;
+
+	function new(string name = "axi4_lite_base_test", uvm_component parent = null);
+		super.new(name, parent);
+	endfunction
+
+	virtual function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		env = axi4_lite_env::type_id::create("env",this);
+	endfunction
+
+	virtual function void end_of_elaboration_phase(uvm_phase phase);
+		super.end_of_elaboration_phase(phase);
+		// 设置全局超时，避免objection异常导致仿真无限挂起
+		uvm_top.set_timeout(GLOBAL_TEST_TIMEOUT, 1);
+		uvm_top.print_topology();
+	endfunction
+endclass
+`endif

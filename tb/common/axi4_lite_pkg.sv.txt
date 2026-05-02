@@ -1,0 +1,48 @@
+`ifndef AXI4_LITE_PKG_SV
+`define AXI4_LITE_PKG_SV
+
+//==============================================================================
+// axi4_lite_pkg.sv — UVM 验证组件编译顺序封装
+// 功能：按依赖关系集中 `include trans → agent → env → seq → test，供 top_tb 一键导入。
+// 注意：修改类层次或文件名时需同步更新此处顺序，避免前向引用错误。
+//==============================================================================
+
+import uvm_pkg::*;
+`include "uvm_macros.svh"
+
+package axi4_lite_pkg;
+	// ----- 事务类型 -----
+	`include "axi4_lite_trans.sv"
+
+	// ----- Agent（driver/monitor/sequencer + 封装） -----
+	`include "../agent/axi4_lite_sequencer.sv"
+	`include "../agent/axi4_lite_driver.sv"
+	`include "../agent/axi4_lite_monitor.sv"
+	`include "../agent/axi4_lite_agent.sv"
+
+	// ----- Env（scoreboard + 环境顶层） -----
+	`include "../env/axi4_lite_scoreboard.sv"
+	`include "../env/axi4_lite_env.sv"
+
+	// ----- Sequence（继承 base_seq 的各类场景） -----
+	`include "../seq/axi4_lite_base_seq.sv"
+	`include "../seq/axi4_lite_simple_rw_seq.sv"
+	`include "../seq/axi4_lite_wstrb_cov_seq.sv"
+	`include "../seq/axi4_lite_boundary_seq.sv"
+	`include "../seq/axi4_lite_error_resp_seq.sv"
+	`include "../seq/axi4_lite_slverr_seq.sv"
+	`include "../seq/axi4_lite_unaligned_seq.sv"
+	`include "../seq/axi4_lite_backpressure_seq.sv"
+
+	// ----- Test（UVM_TESTNAME 对应的测试类） -----
+	`include "../test/axi4_lite_base_test.sv"
+	`include "../test/axi4_lite_simple_test.sv"
+	`include "../test/axi4_lite_wstrb_cov_test.sv"
+	`include "../test/axi4_lite_boundary_test.sv"
+	`include "../test/axi4_lite_error_resp_test.sv"
+	`include "../test/axi4_lite_slverr_test.sv"
+	`include "../test/axi4_lite_unaligned_test.sv"
+	`include "../test/axi4_lite_backpressure_test.sv"
+endpackage
+
+`endif

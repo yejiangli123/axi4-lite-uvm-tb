@@ -1,0 +1,108 @@
+`ifndef AXI4_LITE_MONITOR_SV
+`define AXI4_LITE_MONITOR_SV
+
+//==============================================================================
+// axi4_lite_monitor.sv — 总线监视器（uvm_monitor）
+// 功能：从 mon_cb 采样完整写事务(AW/W→B)与读事务(AR→R)，经 analysis_port 送 scoreboard。
+// 分区：build/run | 写监视任务 | 读监视任务（读写 fork 并行，支持协议允许的交错）
+//==============================================================================
+
+`include "uvm_macros.svh"
+`include "../common/axi4_lite_trans.sv"
+
+class axi4_lite_monitor extends uvm_monitor;
+	`uvm_component_utils(axi4_lite_monitor)
+
+	virtual axi4_lite_if vif;
+
+	uvm_analysis_port #(axi4_lite_trans) ap;
+
+	function new(string name = "axi4_lite_monitor",uvm_component parent = null);
+		super.new(name,parent);
+	endfunction
+
+	virtual function void build_phase(uvm_phase phase);
+		super.build_phase(phase);
+		if(!uvm_config_db#(virtual axi4_lite_if)::get(this,"","vif",vif))begin
+			`uvm_fatal("MON","Failed to get virtal interface!")
+		end
+
+		ap = new("ap",this);
+	endfunction
+
+	virtual task run_phase(uvm_phase phase);
+		super.run_phase(phase);
+
+		if(vif.aresetn == 1'b0) begin
+			`uvm_info("MON","Reset asserted, waiting for release...",UVM_LOW)
+			wait(vif.aresetn == 1'b1);
+		end
+		`uvm_info("MON","Reset released, starting monitoring...",UVM_LOW)
+
+		// 读/写通道独立采样，支持AXI4-Lite读写并发
+		fork
+			monitor_write();
+			monitor_read();
+		join
+	endtask
+
+    // -------------------------------------------------------------------------
+    // monitor_write：锁存 AW/W 握手（可分拍）→ 等待 B 握手 → 上报一笔写事务
+    // -------------------------------------------------------------------------
+    virtual task monitor_write();
+		forever begin
+			axi4_lite_trans tr;
+			bit aw_seen, w_seen;
+			tr = axi4_lite_trans::type_id::create("wr_tr");
+			aw_seen = 1'b0;
+			w_seen  = 1'b0;
+			tr.wr_rd = 1'b1;
+
+			// AW/W 可能同拍握手，也可能分拍握手：循环中分别锁存，直到两者都采到
+			while(!(aw_seen && w_seen)) begin
+				@(vif.mon_cb);
+				if(!aw_seen && (vif.mon_cb.awvalid && vif.mon_cb.awready)) begin
+					tr.addr = vif.mon_cb.awaddr;
+					aw_seen = 1'b1;
+				end
+				if(!w_seen && (vif.mon_cb.wvalid && vif.mon_cb.wready)) begin
+					tr.wdata = vif.mon_cb.wdata;
+					tr.wstrb = vif.mon_cb.wstrb;
+					w_seen = 1'b1;
+				end
+			end
+
+			// 步骤3：采样写响应 B
+			@(vif.mon_cb iff (vif.mon_cb.bvalid && vif.mon_cb.bready));
+			tr.bresp = vif.mon_cb.bresp;
+
+			ap.write(tr);
+			`uvm_info("MON", $sformatf("Observed WRITE transaction: %s", tr.sprint()), UVM_HIGH)
+		end
+    endtask
+
+    // -------------------------------------------------------------------------
+    // monitor_read：AR 握手 → R 握手 → 上报一笔读事务
+    // -------------------------------------------------------------------------
+    virtual task monitor_read();
+		forever begin
+			axi4_lite_trans tr;
+			tr = axi4_lite_trans::type_id::create("rd_tr");
+
+			// 步骤1：采样读地址通道 AR
+			@(vif.mon_cb iff (vif.mon_cb.arvalid && vif.mon_cb.arready));
+			tr.addr = vif.mon_cb.araddr;
+			tr.wr_rd = 1'b0;
+
+			// 步骤2：采样读数据通道 R
+			@(vif.mon_cb iff (vif.mon_cb.rvalid && vif.mon_cb.rready));
+			tr.rdata = vif.mon_cb.rdata;
+			tr.rresp = vif.mon_cb.rresp;
+
+			ap.write(tr);
+			`uvm_info("MON", $sformatf("Observed READ transaction: %s", tr.sprint()), UVM_HIGH)
+		end
+    endtask
+
+endclass
+`endif
